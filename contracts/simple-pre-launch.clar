@@ -25,7 +25,6 @@
 (define-data-var deployment-height (optional uint) none) ;; track when contract deployed
 
 ;; Track seat owners and claims
-(define-map seat-owners principal uint)
 (define-map has-seat principal bool)
 (define-map claimed-amounts principal uint)
 
@@ -56,7 +55,6 @@
             success 
                 (begin
                     ;; Record seat ownership
-                    (map-set seat-owners tx-sender current-seats)
                     (map-set has-seat tx-sender true)
                     (var-set total-seats-taken (+ current-seats u1))
                     (ok true))
@@ -108,9 +106,6 @@
 (define-read-only (has-seat? (address principal))
     (default-to false (map-get? has-seat address)))
 
-(define-read-only (get-seat-owner (address principal))
-    (map-get? seat-owners address))
-
 (define-read-only (get-claimed-amount (address principal))
     (default-to u0 (map-get? claimed-amounts address)))
 
@@ -125,8 +120,7 @@
 ;; if it cannot deploy once it reaches 20 seats, then funds are lost
 ;; is there a mismatch if seat-owners get seat-number higher than 20 as a result of this in the future Re: the rest of the code?
 (define-public (refund)
-    (let ((has-seat? (default-to false (map-get? has-seat tx-sender)))
-          (seat-number (unwrap! (map-get? seat-owners tx-sender) ERR-NOT-SEAT-OWNER)))
+    (let ((has-seat? (default-to false (map-get? has-seat tx-sender))))
         (asserts! (is-expired) ERR-NOT-EXPIRED) ;; if not expired, then no refunds
         (asserts! (is-none (var-get token-contract)) ERR-ALREADY-INITIALIZED) ;; if it is initialized, then no refunds
         (asserts! (< (var-get total-seats-taken) (- SEATS u1)) ERR-TENTY-ONWERS-REACHED) ;; if 20 taken seats, then no refunds
@@ -138,7 +132,6 @@
             success 
                 (begin
                     ;; Clean up seat data
-                    (map-delete seat-owners tx-sender)
                     (map-delete has-seat tx-sender)
                     (var-set total-seats-taken (- (var-get total-seats-taken) u1))
                     (ok true))
