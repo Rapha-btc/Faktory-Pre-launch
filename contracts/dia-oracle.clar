@@ -1,4 +1,4 @@
-(impl-trait .trait-dia-oracle.dia-oracle-trait)
+;; (impl-trait .trait-dia-oracle.dia-oracle-trait)
 
 (define-constant err-unauthorized (err u100))
 

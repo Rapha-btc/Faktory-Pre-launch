@@ -10,7 +10,7 @@
 (define-constant DAO-TOKEN .nothing-faktory) ;; 'SP2XCME6ED8RERGR9R7YDZW7CA6G3F113Y8JMVA46
 
 ;; Vesting schedule (percentages add up to 100)
-(define-constant VESTING-SCHEDULE 
+(define-constant VESTING-SCHEDULE ;; time needs to be fine tuned in bitcoin blocks - burn block height has a bug with at-block in Clarity 3
     (list 
         {height: u100, percent: u10}  ;; 10% at start
         {height: u200, percent: u20}  ;; 20% more
@@ -30,14 +30,13 @@
 ;; Error constants
 (define-constant ERR-ALREADY-HAS-SEAT (err u300))
 (define-constant ERR-NO-SEATS-LEFT (err u301))
-(define-constant ERR-TRANSFER-FAILED (err u302))
-(define-constant ERR-NOT-SEAT-OWNER (err u303))
-(define-constant ERR-NOT-INITIALIZED (err u304))
-(define-constant ERR-ALREADY-CLAIMED (err u305))
-(define-constant ERR-NOTHING-TO-CLAIM (err u306))
-(define-constant ERR-NOT-AUTHORIZED (err u307))
-(define-constant ERR-ALREADY-INITIALIZED (err u308))
-(define-constant ERR-WRONG-TOKEN (err u309))
+(define-constant ERR-NOT-SEAT-OWNER (err u302))
+(define-constant ERR-NOT-INITIALIZED (err u303))
+(define-constant ERR-ALREADY-CLAIMED (err u304))
+(define-constant ERR-NOTHING-TO-CLAIM (err u305))
+(define-constant ERR-NOT-AUTHORIZED (err u306))
+(define-constant ERR-ALREADY-INITIALIZED (err u307))
+(define-constant ERR-WRONG-TOKEN (err u308))
 
 
 ;; Main function to buy a seat
@@ -56,7 +55,7 @@
                     (map-set has-seat tx-sender true)
                     (var-set total-seats-taken (+ current-seats u1))
                     (ok true))
-            error ERR-TRANSFER-FAILED)))
+            error (err error))))
 
 ;; Initialize token contract reference and start vesting
 (define-public (initialize-token-distribution)
@@ -96,7 +95,7 @@
                     (map-set claimed-amounts tx-sender 
                         (+ (default-to u0 (map-get? claimed-amounts tx-sender)) claimable))
                     (ok claimable))
-            error (err ERR-TRANSFER-FAILED))))
+            error (err error))))
 
 ;; Read only functions
 (define-read-only (get-remaining-seats)
