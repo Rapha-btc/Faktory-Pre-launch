@@ -30,6 +30,7 @@
 (define-data-var distribution-height (optional uint) none)
 (define-data-var deployment-height (optional uint) none)
 (define-data-var period-2-height (optional uint) none)
+(define-data-var target-owner principal 'SP000000000000000000002Q6VF78)
 
 ;; Define a data variable to track seat holders
 (define-data-var seat-holders (list 20 {owner: principal, seats: uint}) (list))
@@ -96,10 +97,11 @@
 ;; Non-recursive implementation using fold
 (define-private (find-holder-position 
     (holders (list 20 {owner: principal, seats: uint}))
-    (target-owner principal))
+    (owner principal))
   (let ((result (fold check-if-owner 
                      holders 
                      {found: false, index: u0, current: u0})))
+    (var-set target-owner owner)
     (if (get found result)
         (some (get index result))
         none)))
@@ -111,7 +113,7 @@
       ;; Already found, just pass through
       state
       ;; Check if this is the owner we're looking for
-      (if (is-eq (get owner entry) target-owner)
+      (if (is-eq (get owner entry) (var-get target-owner))
           ;; Found it, update state
           {found: true, index: (get current state), current: (+ (get current state) u1)}
           ;; Not found, increment counter
@@ -141,6 +143,9 @@
                     (var-set total-seats-taken (+ current-seats seat-count))
                     (var-set stx-balance (+ (var-get stx-balance) (* PRICE-PER-SEAT seat-count)))
                     
+                    ;; Update our seat holders list
+                    (update-seat-holder tx-sender (+ user-seats seat-count))
+
                     ;; Check if we should start Period 2
                     (if (and (>= (var-get total-users) MIN-USERS) 
                             (>= (var-get total-seats-taken) SEATS))
@@ -148,6 +153,20 @@
                         true)
                     (ok true))
             error (err error))))
+
+;; Get highest seat holder for Period 2 reductions
+(define-private (get-highest-seat-holder)
+    (let ((holders (var-get seat-holders)))
+      (if (> (len holders) u0)
+          (some (get owner (fold check-highest holders {owner: (get owner (element-at holders u0)), seats: (get seats (element-at holders u0))})))
+          none)))
+
+(define-private (check-highest 
+    (entry {owner: principal, seats: uint}) 
+    (current-max {owner: principal, seats: uint}))
+  (if (>= (get seats entry) (get seats current-max))
+      entry
+      current-max))
 
 ;; Buy exactly one seat in Period 2
 (define-public (buy-single-seat)
@@ -174,17 +193,6 @@
                         (as-contract (stx-transfer? PRICE-PER-SEAT tx-sender holder)))
                     (ok true))
             error (err error))))
-
-;; Get highest seat holder for Period 2 reductions
-(define-private (get-highest-seat-holder)
-    (fold check-highest (map-to-list seats-owned) none))
-
-(define-private (check-highest (entry {key: principal, value: uint}) (current-max (optional principal)))
-    (match current-max
-        prev-max (if (> (get value entry) (default-to u0 (map-get? seats-owned prev-max)))
-            (some (get key entry))
-            current-max)
-        none (some (get key entry))))
 
 ;; Initialize token distribution
 (define-public (initialize-token-distribution)
