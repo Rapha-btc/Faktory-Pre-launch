@@ -7,6 +7,7 @@
 (define-constant SEATS u20)
 (define-constant PRICE-PER-SEAT u7500000) ;; 7.5 STX in microSTX
 (define-constant TOKENS-PER-SEAT u2000000) ;; 2M tokens per seat
+(define-constant EXPIRATION-PERIOD u2100) ;; 1 Stacks reward cycle in PoX-4
 (define-constant DAO-TOKEN .nothing-faktory) ;; 'SP2XCME6ED8RERGR9R7YDZW7CA6G3F113Y8JMVA46
 
 ;; Vesting schedule (percentages add up to 100)
@@ -21,9 +22,10 @@
 (define-data-var total-seats-taken uint u0)
 (define-data-var token-contract (optional principal) none)
 (define-data-var distribution-height (optional uint) none)
+(define-data-var deployment-height (optional uint) none) ;; track when contract deployed
 
 ;; Track seat owners and claims
-(define-map seat-owners uint principal)
+(define-map seat-owners principal uint)
 (define-map has-seat principal bool)
 (define-map claimed-amounts principal uint)
 
@@ -37,7 +39,10 @@
 (define-constant ERR-NOT-AUTHORIZED (err u306))
 (define-constant ERR-ALREADY-INITIALIZED (err u307))
 (define-constant ERR-WRONG-TOKEN (err u308))
-
+(define-constant ERR-ALREADY-EXPIRED (err u309))
+(define-constant ERR-NOT-EXPIRED (err u310))
+(define-constant ERR-NO-REFUND (err u311))
+(define-constant ERR-TENTY-ONWERS-REACHED (err u312))
 
 ;; Main function to buy a seat
 (define-public (buy-seat)
@@ -51,7 +56,7 @@
             success 
                 (begin
                     ;; Record seat ownership
-                    (map-set seat-owners current-seats tx-sender)
+                    (map-set seat-owners tx-sender current-seats)
                     (map-set has-seat tx-sender true)
                     (var-set total-seats-taken (+ current-seats u1))
                     (ok true))
@@ -66,7 +71,6 @@
         (var-set distribution-height (some burn-block-height))
         (ok true)))
 
-;; Calculate claimable amount based on vesting schedule
 ;; Calculate claimable amount based on vesting schedule
 (define-private (get-claimable-amount (owner principal))
     (match (var-get distribution-height) 
@@ -104,11 +108,41 @@
 (define-read-only (has-seat? (address principal))
     (default-to false (map-get? has-seat address)))
 
-(define-read-only (get-seat-owner (seat-number uint))
-    (map-get? seat-owners seat-number))
+(define-read-only (get-seat-owner (address principal))
+    (map-get? seat-owners address))
 
 (define-read-only (get-claimed-amount (address principal))
     (default-to u0 (map-get? claimed-amounts address)))
 
 (define-read-only (get-vesting-schedule)
     VESTING-SCHEDULE)
+
+;; refunds post expiration
+(define-private (is-expired)
+    (match (var-get deployment-height)
+        start-height (>= burn-block-height (+ start-height EXPIRATION-PERIOD))
+        false))
+;; if it cannot deploy once it reaches 20 seats, then funds are lost
+;; is there a mismatch if seat-owners get seat-number higher than 20 as a result of this in the future Re: the rest of the code?
+(define-public (refund)
+    (let ((has-seat? (default-to false (map-get? has-seat tx-sender)))
+          (seat-number (unwrap! (map-get? seat-owners tx-sender) ERR-NOT-SEAT-OWNER)))
+        (asserts! (is-expired) ERR-NOT-EXPIRED) ;; if not expired, then no refunds
+        (asserts! (is-none (var-get token-contract)) ERR-ALREADY-INITIALIZED) ;; if it is initialized, then no refunds
+        (asserts! (< (var-get total-seats-taken) (- SEATS u1)) ERR-TENTY-ONWERS-REACHED) ;; if 20 taken seats, then no refunds
+        (asserts! has-seat? ERR-NOT-SEAT-OWNER) ;; if no seat, then no refunds
+        ;; (asserts! (> (var-get total-seats-taken) u0) ERR-NOBODY-TO-REFUND) ;; if no seats taken, then no refunds
+        
+        ;; Process refund
+        (match (stx-transfer? PRICE-PER-SEAT (as-contract tx-sender) tx-sender)
+            success 
+                (begin
+                    ;; Clean up seat data
+                    (map-delete seat-owners tx-sender)
+                    (map-delete has-seat tx-sender)
+                    (var-set total-seats-taken (- (var-get total-seats-taken) u1))
+                    (ok true))
+            error (err error))))
+
+;; boot contract
+(var-set deployment-height (some burn-block-height))
