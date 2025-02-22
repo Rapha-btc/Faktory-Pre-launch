@@ -139,28 +139,27 @@
     (let (
         (current-seats (var-get total-seats-taken))
         (user-seats (default-to u0 (map-get? seats-owned tx-sender)))
-        (max-allowed (get-max-seats-allowed)))
+        (max-allowed (get-max-seats-allowed))
+        (actual-seats (if (> seat-count max-allowed) 
+                        max-allowed
+                        seat-count)))
         
         (asserts! (> seat-count u0) ERR-INVALID-SEAT-COUNT)
-        (asserts! (<= seat-count max-allowed) ERR-TOO-MANY-SEATS)
         (asserts! (< current-seats SEATS) ERR-NO-SEATS-LEFT)
         (asserts! (is-none (var-get period-2-height)) ERR-ALREADY-EXPIRED)
         
         ;; Process payment
-        (match (stx-transfer? (* PRICE-PER-SEAT seat-count) tx-sender (as-contract tx-sender))
+        (match (stx-transfer? (* PRICE-PER-SEAT actual-seats) tx-sender (as-contract tx-sender))
             success 
                 (begin
                     ;; Update records
                     (if (is-eq user-seats u0)
                         (var-set total-users (+ (var-get total-users) u1))
-                        true) ;; already a user no need to increment
-                    (map-set seats-owned tx-sender (+ user-seats seat-count))
-                    (var-set total-seats-taken (+ current-seats seat-count))
-                    (var-set stx-balance (+ (var-get stx-balance) (* PRICE-PER-SEAT seat-count)))
-                    
-                    ;; Update our seat holders list
-                    (update-seat-holder tx-sender (+ user-seats seat-count))
-
+                        true)
+                    (map-set seats-owned tx-sender (+ user-seats actual-seats))
+                    (var-set total-seats-taken (+ current-seats actual-seats))
+                    (var-set stx-balance (+ (var-get stx-balance) (* PRICE-PER-SEAT actual-seats)))
+                    (update-seat-holder tx-sender (+ user-seats actual-seats))
                     ;; Check if we should start Period 2
                     (if (and (>= (var-get total-users) MIN-USERS) 
                             (>= (var-get total-seats-taken) SEATS))
@@ -240,8 +239,6 @@
                     (ok true))
             error (err error))))
 
-;; Rest of the functions (claiming, vesting, etc.) remain similar to original
-;; Just update seat ownership checks to use seats-owned map instead of has-seat
 ;; Calculate claimable amount based on vesting schedule
 (define-private (get-claimable-amount (owner principal))
     (match (var-get distribution-height) 
