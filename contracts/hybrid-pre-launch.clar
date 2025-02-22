@@ -55,6 +55,9 @@
 (define-constant ERR-CONTRACT-INSUFFICIENT-FUNDS (err u311))
 (define-constant ERR-PERIOD-2-MULTIPLE-SEATS (err u312))
 (define-constant ERR-INVALID-SEAT-COUNT (err u313))
+(define-constant ERR-SLICE-FAILED (err u314))
+(define-constant ERR-TOO-LONG (err u315))
+(define-constant ERR-REMOVING-HOLDER (err u316))
 
 ;; Helper functions for period management
 (define-private (is-period-1-expired)
@@ -95,7 +98,6 @@
         (unwrap-panic (as-max-len? (append holders {owner: owner, seats: seat-count}) u20)))))
 
 ;; Helper to find a holder's position in the list
-;; Non-recursive implementation using fold
 (define-private (find-holder-position 
     (holders (list 20 {owner: principal, seats: uint}))
     (owner principal))
@@ -120,6 +122,18 @@
           ;; Not found, increment counter
           {found: false, index: (get index state), current: (+ (get current state) u1)})))
 
+(define-private (remove-seat-holder (holder principal))
+  (let ((position (find-holder-position (var-get seat-holders) holder))
+        (current-list (var-get seat-holders)))
+    (match position 
+        pos (let ((before-slice (unwrap! (slice? current-list u0 pos) ERR-SLICE-FAILED))
+                  (after-slice (unwrap! (slice? current-list (+ pos u1) (len current-list)) ERR-SLICE-FAILED))
+                  (updated-list (unwrap! (as-max-len? (concat before-slice after-slice) u20) ERR-TOO-LONG)))
+              (var-set seat-holders updated-list)
+              (ok true))
+        (ok false))))  ;; If position not found, do nothing
+
+;; Main functions
 ;; Buy seats in Period 1
 (define-public (buy-seats (seat-count uint))
     (let (
@@ -218,7 +232,7 @@
         ;; Process refund
         (match (as-contract (stx-transfer? (* PRICE-PER-SEAT user-seats) tx-sender seat-owner))
             success 
-                (begin
+                (let ((is-removed (unwrap! (remove-seat-holder tx-sender) ERR-REMOVING-HOLDER)))
                     (map-delete seats-owned tx-sender)
                     (var-set total-seats-taken (- (var-get total-seats-taken) user-seats))
                     (var-set total-users (- (var-get total-users) u1))
@@ -228,6 +242,54 @@
 
 ;; Rest of the functions (claiming, vesting, etc.) remain similar to original
 ;; Just update seat ownership checks to use seats-owned map instead of has-seat
+;; Calculate claimable amount based on vesting schedule
+(define-private (get-claimable-amount (owner principal))
+    (match (var-get distribution-height) 
+        start-height 
+            (let ((claimed (default-to u0 (map-get? claimed-amounts owner)))
+                  (seats-owner (default-to u0 (map-get? seats-owned owner)))
+                  (vested (fold check-claimable VESTING-SCHEDULE u0)))
+                (- (* vested seats-owner) claimed)) ;; double claiming is impossible    
+        u0)) ;; If distribution not initialized, nothing is claimable
+
+(define-private (check-claimable (entry {height: uint, percent: uint}) (current-total uint))
+    (if (<= (+ (unwrap-panic (var-get distribution-height)) (get height entry)) burn-block-height)
+        (+ current-total (/ (* TOKENS-PER-SEAT (get percent entry)) u100))
+        current-total))
+
+;; Claim vested tokens
+(define-public (claim (ft <faktory-token>))
+    (let ((claimable (get-claimable-amount tx-sender))
+          (seat-owner tx-sender))
+        (asserts! (is-eq (var-get token-contract) (some DAO-TOKEN)) ERR-NOT-INITIALIZED) 
+        (asserts! (is-eq (contract-of ft) DAO-TOKEN) ERR-WRONG-TOKEN)
+        (asserts! (> (default-to u0 (map-get? seats-owned tx-sender)) u0) ERR-NOT-SEAT-OWNER)
+        (asserts! (> claimable u0) ERR-NOTHING-TO-CLAIM)
+        (asserts! (>= (var-get ft-balance) claimable) ERR-CONTRACT-INSUFFICIENT-FUNDS)
+        (match (as-contract (contract-call? ft transfer claimable tx-sender seat-owner none))
+            success
+                (begin
+                    (map-set claimed-amounts tx-sender 
+                        (+ (default-to u0 (map-get? claimed-amounts tx-sender)) claimable))
+                    (var-set ft-balance (- (var-get ft-balance) claimable)) ;; reduce ft-balance by claimable
+                    (ok claimable))
+            error (err error))))
+
+;; Read only functions
+(define-read-only (get-remaining-seats)
+    (- SEATS (var-get total-seats-taken)))
+
+(define-read-only (get-seats-owned (address principal))
+    (> (default-to u0 (map-get? seats-owned address)) u0))
+
+(define-read-only (get-claimed-amount (address principal))
+    (default-to u0 (map-get? claimed-amounts address)))
+
+(define-read-only (get-vesting-schedule)
+    VESTING-SCHEDULE)
+
+(define-read-only (get-seat-holders)
+    (var-get seat-holders))
 
 ;; boot contract
 (var-set deployment-height (some burn-block-height))
