@@ -13,6 +13,7 @@
 (define-constant EXPIRATION-PERIOD u2100) ;; 1 Stacks reward cycle in PoX-4
 (define-constant PERIOD-2-LENGTH u100) ;; blocks for redistribution period
 (define-constant DAO-TOKEN .nothing-faktory)
+(define-constant FT-INITIALIZED-BALANCE u20000000000000) ;; 20M tokens for pre-launch
 
 ;; Vesting schedule (percentages add up to 100)
 (define-constant VESTING-SCHEDULE
@@ -157,6 +158,16 @@
                             (>= (var-get total-seats-taken) SEATS))
                         (var-set period-2-height (some burn-block-height))
                         true)
+                    (print {
+                        type: "buy-seats",
+                        buyer: tx-sender,
+                        seats-owned: (+ user-seats actual-seats),
+                        total-users: (var-get total-users),
+                        total-seats-taken: (+ current-seats actual-seats),
+                        stx-balance: (var-get stx-balance),
+                        seat-holders: (var-get seat-holders),
+                        period-2-height: (var-get period-2-height) ;; perhaps these var-get can be optimized?
+                        })
                     (ok true))
             error (err error))))
 
@@ -198,6 +209,15 @@
                     (map-set seats-owned tx-sender u1)
                     (update-seat-holder holder (- old-seats u1))  ;; Update list for holder
                     (update-seat-holder tx-sender u1)             ;; Update list for buyer
+                    (print {
+                        type: "buy-single-seat",
+                        total-users: (var-get total-users),
+                        holder: holder,
+                        holder-seats: (- old-seats u1),
+                        buyer: tx-sender,
+                        buyer-seats: u1,
+                        seat-holders: (var-get seat-holders),
+                         })
                     (ok true))
             error (err error))))
 
@@ -209,7 +229,13 @@
         (asserts! (>= (var-get total-users) MIN-USERS) ERR-NOT-INITIALIZED)
         (var-set token-contract (some DAO-TOKEN))
         (var-set distribution-height (some burn-block-height))
-        (var-set ft-balance u20000000000000) ;; 20M tokens
+        (var-set ft-balance FT-INITIALIZED-BALANCE) ;; 20M tokens
+        (print {
+            type: "distribution-initialized",
+            token-contract: DAO-TOKEN,
+            distribution-height: burn-block-height,
+            ft-balance: FT-INITIALIZED-BALANCE
+        })
         (ok true)))
 
 ;; Refund logic only for Period 1 failures
@@ -230,6 +256,14 @@
                     (var-set total-seats-taken (- (var-get total-seats-taken) user-seats))
                     (var-set total-users (- (var-get total-users) u1))
                     (var-set stx-balance (- (var-get stx-balance) (* PRICE-PER-SEAT user-seats)))
+                    (print {
+                        type: "refund",
+                        user: tx-sender,
+                        seat-holders: (var-get seat-holders),
+                        total-seats-taken: (var-get total-seats-taken),
+                        total-users: (var-get total-users),
+                        stx-balance: (var-get stx-balance)
+                        })
                     (ok true))
             error (err error))))
 
@@ -263,6 +297,13 @@
                     (map-set claimed-amounts tx-sender 
                         (+ (default-to u0 (map-get? claimed-amounts tx-sender)) claimable))
                     (var-set ft-balance (- (var-get ft-balance) claimable)) ;; reduce ft-balance by claimable
+                    (print {
+                        type: "claim",
+                        user: tx-sender,
+                        amount-claimed: claimable,
+                        total-claimed: (map-get? claimed-amounts tx-sender),
+                        ft-balance: (var-get ft-balance)
+                        })
                     (ok claimable))
             error (err error))))
 
