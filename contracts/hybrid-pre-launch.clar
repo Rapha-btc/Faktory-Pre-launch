@@ -58,6 +58,7 @@
 (define-constant ERR-SLICE-FAILED (err u314))
 (define-constant ERR-TOO-LONG (err u315))
 (define-constant ERR-REMOVING-HOLDER (err u316))
+(define-constant ERR-HIGHEST-ONE-SEAT (err u317))
 
 ;; Helper functions for period management
 (define-private (is-period-1-expired)
@@ -69,15 +70,6 @@
     (match (var-get period-2-height)
         start-height (< burn-block-height (+ start-height PERIOD-2-LENGTH))
         false))
-
-(define-private (get-max-seats-allowed)
-    (let (
-        (seats-remaining (- SEATS (var-get total-seats-taken)))    ;; 13 seats left
-        (users-remaining (- MIN-USERS (var-get total-users)))      ;; 9 users needed
-        (max-possible (+ (- seats-remaining users-remaining) u1))) ;; (13 - 9) + 1 = 5 seats possible
-        (if (>= max-possible MAX-SEATS-PER-USER)
-            MAX-SEATS-PER-USER
-            max-possible)))
 
 ;; Helper function to update seat holders list
 (define-private (update-seat-holder (owner principal) (seat-count uint))
@@ -194,16 +186,18 @@
         (asserts! (is-some (var-get period-2-height)) ERR-NOT-INITIALIZED)
         (asserts! (is-in-period-2) ERR-ALREADY-EXPIRED)
         (asserts! (< (var-get total-users) SEATS) ERR-NO-SEATS-LEFT)
+        (asserts! (> old-seats u1) ERR-HIGHEST-ONE-SEAT)
         
         ;; Process payment and refund highest holder
         (match (stx-transfer? PRICE-PER-SEAT tx-sender holder)
             success 
                 (begin
                     ;; Update new buyer
-                    (map-set seats-owned tx-sender u1)
                     (var-set total-users (+ (var-get total-users) u1))
-                    ;; Reduce highest holder's seats and refund them
                     (map-set seats-owned holder (- old-seats u1))
+                    (map-set seats-owned tx-sender u1)
+                    (update-seat-holder holder (- old-seats u1))  ;; Update list for holder
+                    (update-seat-holder tx-sender u1)             ;; Update list for buyer
                     (ok true))
             error (err error))))
 
@@ -273,6 +267,40 @@
             error (err error))))
 
 ;; Read only functions
+(define-read-only (get-max-seats-allowed)
+    (let (
+        (seats-remaining (- SEATS (var-get total-seats-taken)))    ;; 13 seats left
+        (users-remaining (- MIN-USERS (var-get total-users)))      ;; 9 users needed
+        (max-possible (+ (- seats-remaining users-remaining) u1))) ;; (13 - 9) + 1 = 5 seats possible
+        (if (>= max-possible MAX-SEATS-PER-USER)
+            MAX-SEATS-PER-USER
+            max-possible)))
+
+(define-read-only (get-contract-status)
+    {
+        is-period-1-expired: (is-period-1-expired),
+        period-2-started: (is-some (var-get period-2-height)),
+        is-in-period-2: (is-in-period-2),
+        total-users: (var-get total-users),
+        total-seats-taken: (var-get total-seats-taken),
+        distribution-initialized: (is-some (var-get token-contract))
+    })
+
+(define-read-only (get-user-info (user principal))
+    {
+        seats-owned: (default-to u0 (map-get? seats-owned user)),
+        amount-claimed: (default-to u0 (map-get? claimed-amounts user)),
+        claimable-amount: (get-claimable-amount user)
+    })
+
+(define-read-only (get-period-2-info)
+    {
+        highest-holder: (get-highest-seat-holder),
+        period-2-blocks-remaining: (match (var-get period-2-height)
+            start (- (+ start PERIOD-2-LENGTH) burn-block-height)
+            u0)
+    })
+
 (define-read-only (get-remaining-seats)
     (- SEATS (var-get total-seats-taken)))
 
