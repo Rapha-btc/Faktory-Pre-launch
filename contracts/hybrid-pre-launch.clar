@@ -1,6 +1,7 @@
 ;; Pre-launch contract for token distribution
 ;; Dynamic allocation: 1-7 seats per user in Period 1
 ;; Each seat = 7.5 STX, targeting 20 seats total with minimum 10 users
+;; Question: will there be lots of failed tsx as a result of buyers buying more than max seat per user
 
 (use-trait faktory-token .faktory-trait-v1.sip-010-trait)
 
@@ -88,8 +89,8 @@
     (seat-count uint))
   (let ((position (find-holder-position holders owner)))
     (if (is-some position)
-        ;; Update existing holder
-        (replace-at? holders (unwrap-panic position) {owner: owner, seats: seat-count})
+        ;; Update existing holder - unwrap the optional result
+        (unwrap-panic (replace-at? holders (unwrap-panic position) {owner: owner, seats: seat-count}))
         ;; Add new holder
         (unwrap-panic (as-max-len? (append holders {owner: owner, seats: seat-count}) u20)))))
 
@@ -158,7 +159,8 @@
 (define-private (get-highest-seat-holder)
     (let ((holders (var-get seat-holders)))
       (if (> (len holders) u0)
-          (some (get owner (fold check-highest holders {owner: (get owner (element-at holders u0)), seats: (get seats (element-at holders u0))})))
+          (let ((first-holder (unwrap-panic (element-at holders u0))))
+            (some (get owner (fold check-highest holders first-holder))))
           none)))
 
 (define-private (check-highest 
@@ -172,25 +174,23 @@
 (define-public (buy-single-seat)
     (let (
         (current-seats (var-get total-seats-taken))
-        (highest-holder (get-highest-seat-holder)))
+        (highest-holder (get-highest-seat-holder))
+        (holder (unwrap! highest-holder ERR-NOT-INITIALIZED))
+        (old-seats (unwrap! (map-get? seats-owned holder) ERR-NOT-INITIALIZED)))
         
         (asserts! (is-some (var-get period-2-height)) ERR-NOT-INITIALIZED)
         (asserts! (is-in-period-2) ERR-ALREADY-EXPIRED)
         (asserts! (< (var-get total-users) SEATS) ERR-NO-SEATS-LEFT)
         
         ;; Process payment and refund highest holder
-        (match (stx-transfer? PRICE-PER-SEAT tx-sender (as-contract tx-sender))
+        (match (stx-transfer? PRICE-PER-SEAT tx-sender holder)
             success 
                 (begin
                     ;; Update new buyer
                     (map-set seats-owned tx-sender u1)
                     (var-set total-users (+ (var-get total-users) u1))
-                    
                     ;; Reduce highest holder's seats and refund them
-                    (let ((holder (unwrap! highest-holder ERR-NOT-INITIALIZED))
-                          (current-seats (unwrap! (map-get? seats-owned holder) ERR-NOT-INITIALIZED)))
-                        (map-set seats-owned holder (- current-seats u1))
-                        (as-contract (stx-transfer? PRICE-PER-SEAT tx-sender holder)))
+                    (map-set seats-owned holder (- old-seats u1))
                     (ok true))
             error (err error))))
 
