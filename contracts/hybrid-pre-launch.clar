@@ -13,15 +13,17 @@
 (define-constant EXPIRATION-PERIOD u2100) ;; 1 Stacks reward cycle in PoX-4
 (define-constant PERIOD-2-LENGTH u100) ;; blocks for redistribution period
 (define-constant DAO-TOKEN .nothing-faktory)
+(define-constant DEX-CONTRACT .nothing-faktory-dex)
 (define-constant FT-INITIALIZED-BALANCE u20000000000000) ;; 20M tokens for pre-launch
+(define-constant ACCELERATED-PERCENT u60) 
 
 ;; Vesting schedule (percentages add up to 100)
 (define-constant VESTING-SCHEDULE
     (list 
-        {height: u100, percent: u10}  ;; 10% at start
-        {height: u1000, percent: u20}  ;; 20% more
-        {height: u2100, percent: u30}  ;; 30% more
-        {height: u4200, percent: u40})) ;; Final 40%
+        {height: u100, percent: u10, id: u0}  ;; 10% at start
+        {height: u1000, percent: u20, id: u1}  ;; 20% more
+        {height: u2100, percent: u30, id: u2}  ;; 30% more
+        {height: u4200, percent: u40, id: u3})) ;; Final 40%
 
 ;; Data vars
 (define-data-var ft-balance uint u0)
@@ -32,7 +34,11 @@
 (define-data-var distribution-height (optional uint) none)
 (define-data-var deployment-height (optional uint) none)
 (define-data-var period-2-height (optional uint) none)
+(define-data-var accelerated-vesting bool false)
+
+;; Helper vars
 (define-data-var target-owner principal 'SP000000000000000000002Q6VF78)
+(define-data-var current-height uint u0)
 
 ;; Define a data variable to track seat holders
 (define-data-var seat-holders (list 20 {owner: principal, seats: uint}) (list))
@@ -60,6 +66,7 @@
 (define-constant ERR-TOO-LONG (err u315))
 (define-constant ERR-REMOVING-HOLDER (err u316))
 (define-constant ERR-HIGHEST-ONE-SEAT (err u317))
+(define-constant ERR-NOT-BONDED (err u318))
 
 ;; Helper functions for period management
 (define-private (is-period-1-expired)
@@ -277,10 +284,14 @@
                 (- (* vested seats-owner) claimed)) ;; double claiming is impossible    
         u0)) ;; If distribution not initialized, nothing is claimable
 
-(define-private (check-claimable (entry {height: uint, percent: uint}) (current-total uint))
+(define-private (check-claimable (entry {height: uint, percent: uint, id: uint}) (current-total uint))
     (if (<= (+ (unwrap-panic (var-get distribution-height)) (get height entry)) burn-block-height)
         (+ current-total (/ (* TOKENS-PER-SEAT (get percent entry)) u100))
-        current-total))
+        (if (and 
+            (var-get accelerated-vesting)   ;; token graduated, accelerated vesting
+            (<= (get id entry) u2))  ;; we're in first 3 entries (0,1,2)
+            (+ current-total (/ (* TOKENS-PER-SEAT (get percent entry)) u100))
+            current-total)))
 
 ;; Claim vested tokens
 (define-public (claim (ft <faktory-token>))
@@ -306,6 +317,15 @@
                         })
                     (ok claimable))
             error (err error))))
+
+;; on Bonding
+;; In Dex contract:
+;; In the graduation branch of the buy function 
+;; add a line to the call toggle-accelerated-vesting
+(define-public (toggle-accelerated-vesting)
+    (begin
+        (asserts! (is-eq tx-sender DEX-CONTRACT) ERR-NOT-AUTHORIZED)
+        (ok (var-set accelerated-vesting true))))
 
 ;; Read only functions
 (define-read-only (get-max-seats-allowed)
