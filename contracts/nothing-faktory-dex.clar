@@ -77,6 +77,7 @@
 ;;               (var-set open false)
 ;;               (var-set stx-balance u0)
 ;;               (var-set ft-balance u0)
+;; ADDING pre-launch accelerated vesting               (contract-call? .hybrid-pre-launch toggle-accelerated-vesting)
 ;;               (print {type: "buy", ft: (contract-of ft), tokens-out: tokens-out, ustx: ustx, burn-amount: burn-amount, amm-amount: amm-amount,
 ;;                       amm-ustx: amm-ustx,
 ;;                       stx-balance: u0, ft-balance: u0,

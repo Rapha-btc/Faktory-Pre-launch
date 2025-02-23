@@ -38,7 +38,6 @@
 
 ;; Helper vars
 (define-data-var target-owner principal 'SP000000000000000000002Q6VF78)
-(define-data-var current-height uint u0)
 
 ;; Define a data variable to track seat holders
 (define-data-var seat-holders (list 20 {owner: principal, seats: uint}) (list))
@@ -322,6 +321,7 @@
 ;; In Dex contract:
 ;; In the graduation branch of the buy function 
 ;; add a line to the call toggle-accelerated-vesting
+;; (contract-call? .hybrid-pre-launch toggle-accelerated-vesting)
 (define-public (toggle-accelerated-vesting)
     (begin
         (asserts! (is-eq tx-sender DEX-CONTRACT) ERR-NOT-AUTHORIZED)
