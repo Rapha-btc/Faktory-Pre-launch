@@ -338,6 +338,7 @@
             max-possible)))
 
 (define-read-only (get-contract-status)
+    (ok 
     {
         is-period-1-expired: (is-period-1-expired),
         period-2-started: (is-some (var-get period-2-height)),
@@ -345,37 +346,41 @@
         total-users: (var-get total-users),
         total-seats-taken: (var-get total-seats-taken),
         distribution-initialized: (is-some (var-get token-contract))
-    })
+    }))
 
 (define-read-only (get-user-info (user principal))
+    (ok
     {
         seats-owned: (default-to u0 (map-get? seats-owned user)),
         amount-claimed: (default-to u0 (map-get? claimed-amounts user)),
         claimable-amount: (get-claimable-amount user)
-    })
+    }))
 
 (define-read-only (get-period-2-info)
+    (ok
     {
         highest-holder: (get-highest-seat-holder),
         period-2-blocks-remaining: (match (var-get period-2-height)
             start (- (+ start PERIOD-2-LENGTH) burn-block-height)
             u0)
-    })
+    }))
 
 (define-read-only (get-remaining-seats)
-    (- SEATS (var-get total-seats-taken)))
+    (ok {remainin-seats: (- SEATS (var-get total-seats-taken))}))
 
 (define-read-only (get-seats-owned (address principal))
-    (> (default-to u0 (map-get? seats-owned address)) u0))
+    (ok {seats-owned:
+    (> (default-to u0 (map-get? seats-owned address)) u0)}))
 
 (define-read-only (get-claimed-amount (address principal))
-    (default-to u0 (map-get? claimed-amounts address)))
+    (ok {claimed-amount:
+    (default-to u0 (map-get? claimed-amounts address))}))
 
 (define-read-only (get-vesting-schedule)
-    VESTING-SCHEDULE)
+    (ok {vesting-schedule: VESTING-SCHEDULE}))
 
 (define-read-only (get-seat-holders)
-    (var-get seat-holders))
+    (ok {seat-holders: (var-get seat-holders)}))
 
 ;; boot contract
 (var-set deployment-height (some burn-block-height))
