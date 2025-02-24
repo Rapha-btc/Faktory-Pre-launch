@@ -134,7 +134,7 @@
 
 ;; Main functions
 ;; Buy seats in Period 1
-(define-public (buy-seats (seat-count uint))
+(define-public (buy-up-to (seat-count uint))
     (let (
         (current-seats (var-get total-seats-taken))
         (user-seats (default-to u0 (map-get? seats-owned tx-sender)))
