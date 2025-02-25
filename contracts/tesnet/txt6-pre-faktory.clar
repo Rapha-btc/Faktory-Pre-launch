@@ -13,8 +13,7 @@
 (define-constant TOKENS-PER-SEAT u2000000000000) ;; 2M tokens per seat
 (define-constant EXPIRATION-PERIOD u2100) ;; 1 Stacks reward cycle in PoX-4
 (define-constant PERIOD-2-LENGTH u100) ;; blocks for redistribution period
-(define-constant DAO-TOKEN 'STRZ4P1ABSVSZPC4HZ4GDAW834HHEHJMF65X5S6D.txt6-faktory)
-(define-constant DEX-CONTRACT 'STRZ4P1ABSVSZPC4HZ4GDAW834HHEHJMF65X5S6D.txt6-faktory-dex)
+
 (define-constant FT-INITIALIZED-BALANCE u20000000000000) ;; 20M tokens for pre-launch
 (define-constant ACCELERATED-PERCENT u60) 
 
@@ -37,6 +36,11 @@
 (define-data-var period-2-height (optional uint) none)
 (define-data-var accelerated-vesting bool false)
 
+;; Determined after multi-sig creation
+(define-data-var multi-sig-creator principal tx-sender)
+(define-data-var dao-token (optional principal) none) ;; 'STRZ4P1ABSVSZPC4HZ4GDAW834HHEHJMF65X5S6D.txt6-faktory)
+(define-data-var dex-contract (optional principal) none) ;; 'STRZ4P1ABSVSZPC4HZ4GDAW834HHEHJMF65X5S6D.txt6-faktory-dex)
+(define-data-var dao-multi-sig (optional principal) none) ;; 'ST3SPSJDYGHF0ARGV1TNS0HX6JEP7T1J6849A7BB4)
 ;; Helper vars
 (define-data-var target-owner principal 'ST3SPSJDYGHF0ARGV1TNS0HX6JEP7T1J6849A7BB4) ;; cant-be-evil.stx  in testnet? random 'SP000000000000000000002Q6VF78
 
@@ -51,7 +55,7 @@
 (define-constant ERR-TOO-MANY-SEATS (err u300))
 (define-constant ERR-NO-SEATS-LEFT (err u301))
 (define-constant ERR-NOT-SEAT-OWNER (err u302))
-(define-constant ERR-NOT-INITIALIZED (err u303))
+(define-constant ERR-NOT-SET (err u303))
 (define-constant ERR-NOTHING-TO-CLAIM (err u304))
 (define-constant ERR-NOT-AUTHORIZED (err u305))
 (define-constant ERR-ALREADY-INITIALIZED (err u306))
@@ -67,6 +71,11 @@
 (define-constant ERR-REMOVING-HOLDER (err u316))
 (define-constant ERR-HIGHEST-ONE-SEAT (err u317))
 (define-constant ERR-NOT-BONDED (err u318))
+(define-constant ERR-PERIOD-2-NOT-INITIALIZED (err u319))
+(define-constant ERR-PERIOD-2-ALREADY-STARTED (err u320))
+(define-constant ERR-DISTRIBUTION-NOT-INITIALIZED (err u321))
+(define-constant ERR-HIGHEST-HOLDER (err u322))
+
 
 ;; Helper functions for period management
 (define-private (is-period-1-expired)
@@ -146,7 +155,7 @@
         
         (asserts! (> seat-count u0) ERR-INVALID-SEAT-COUNT)
         (asserts! (< current-seats SEATS) ERR-NO-SEATS-LEFT)
-        (asserts! (is-none (var-get period-2-height)) ERR-ALREADY-EXPIRED)
+        (asserts! (is-none (var-get period-2-height)) ERR-PERIOD-2-ALREADY-STARTED)
         
         ;; Process payment
         (match (stx-transfer? (* PRICE-PER-SEAT actual-seats) tx-sender (as-contract tx-sender))
@@ -198,10 +207,10 @@
     (let (
         (current-seats (var-get total-seats-taken))
         (highest-holder (get-highest-seat-holder))
-        (holder (unwrap! highest-holder ERR-NOT-INITIALIZED))
-        (old-seats (unwrap! (map-get? seats-owned holder) ERR-NOT-INITIALIZED)))
+        (holder (unwrap! highest-holder ERR-HIGHEST-HOLDER))
+        (old-seats (default-to u0 (map-get? seats-owned holder))))
         
-        (asserts! (is-some (var-get period-2-height)) ERR-NOT-INITIALIZED)
+        (asserts! (is-some (var-get period-2-height)) ERR-PERIOD-2-NOT-INITIALIZED)
         (asserts! (is-in-period-2) ERR-ALREADY-EXPIRED)
         (asserts! (< (var-get total-users) SEATS) ERR-NO-SEATS-LEFT)
         (asserts! (> old-seats u1) ERR-HIGHEST-ONE-SEAT)
@@ -228,31 +237,13 @@
                     (ok true))
             error (err error))))
 
-;; Initialize token distribution
-(define-public (initialize-token-distribution)
-    (begin
-        (asserts! (is-eq tx-sender DAO-TOKEN) ERR-NOT-AUTHORIZED)
-        (asserts! (is-none (var-get token-contract)) ERR-ALREADY-INITIALIZED)
-        (asserts! (>= (var-get total-users) MIN-USERS) ERR-NOT-INITIALIZED)
-        (var-set token-contract (some DAO-TOKEN))
-        (var-set distribution-height (some burn-block-height))
-        (var-set ft-balance FT-INITIALIZED-BALANCE) ;; 20M tokens
-        (print {
-            type: "distribution-initialized",
-            token-contract: DAO-TOKEN,
-            distribution-height: burn-block-height,
-            ft-balance: FT-INITIALIZED-BALANCE
-        })
-        (ok true)))
-
 ;; Refund logic only for Period 1 failures
 (define-public (refund)
     (let (
         (user-seats (default-to u0 (map-get? seats-owned tx-sender)))
         (seat-owner tx-sender))
-        (asserts! (is-period-1-expired) ERR-NOT-EXPIRED)
-        (asserts! (is-none (var-get token-contract)) ERR-ALREADY-INITIALIZED)
-        (asserts! (< (var-get total-users) MIN-USERS) ERR-NO-REFUND)
+        (asserts! (is-period-1-expired) ERR-NOT-EXPIRED) ;; period 1 is expired
+        (asserts! (is-none (var-get period-2-height)) ERR-PERIOD-2-ALREADY-STARTED)
         (asserts! (> user-seats u0) ERR-NOT-SEAT-OWNER)
         
         ;; Process refund
@@ -297,8 +288,8 @@
 (define-public (claim (ft <faktory-token>))
     (let ((claimable (get-claimable-amount tx-sender))
           (seat-owner tx-sender))
-        (asserts! (is-eq (var-get token-contract) (some DAO-TOKEN)) ERR-NOT-INITIALIZED) 
-        (asserts! (is-eq (contract-of ft) DAO-TOKEN) ERR-WRONG-TOKEN)
+        (asserts! (is-eq (var-get token-contract) (var-get dao-token)) ERR-DISTRIBUTION-NOT-INITIALIZED) 
+        (asserts! (is-eq (contract-of ft) (unwrap-panic (var-get dao-token))) ERR-WRONG-TOKEN)
         (asserts! (> (default-to u0 (map-get? seats-owned tx-sender)) u0) ERR-NOT-SEAT-OWNER)
         (asserts! (> claimable u0) ERR-NOTHING-TO-CLAIM)
         (asserts! (>= (var-get ft-balance) claimable) ERR-CONTRACT-INSUFFICIENT-FUNDS)
@@ -317,16 +308,6 @@
                         })
                     (ok claimable))
             error (err error))))
-
-;; on Bonding
-;; In Dex contract:
-;; In the graduation branch of the buy function 
-;; add a line to the call toggle-accelerated-vesting
-;; (contract-call? .hybrid-pre-launch toggle-accelerated-vesting)
-(define-public (toggle-accelerated-vesting)
-    (begin
-        (asserts! (is-eq tx-sender DEX-CONTRACT) ERR-NOT-AUTHORIZED)
-        (ok (var-set accelerated-vesting true))))
 
 ;; Read only functions
 (define-read-only (get-max-seats-allowed)
@@ -382,6 +363,68 @@
 
 (define-read-only (get-seat-holders)
     (ok {seat-holders: (var-get seat-holders)}))
+
+;; multi-sig creator reserved functions
+;; At the end of period 1, our multi-sig agent creates a multi-sig that will be used to deploy all ai dao contracts
+;; Our multi-sig agent will create all contract deployment tsx and pre-sign them
+;; Anyone who is a first buyer in period 1 will be able to sign all the contract deployments
+(define-public (set-contract-addresses (new-multi-sig principal) (new-dao-token principal) (new-dex-contract principal))
+    (begin
+        ;; Check Period 1 has ended (either expired or Period 2 started)
+        (asserts! (is-some (var-get period-2-height)) ERR-PERIOD-2-NOT-INITIALIZED)        ;; Only allow a multi-sig creator acting as an agent to set contract addresses using multi-sig of 10 buyers resulting from period 1
+        (asserts! (is-eq tx-sender (var-get multi-sig-creator)) ERR-NOT-AUTHORIZED)
+        ;; assert out if period 1 is not finished (either expired or 150 STX collected)
+
+        ;; Update the addresses
+        (var-set multi-sig (some new-multi-sig))
+        (var-set dao-token (some new-dao-token))
+        (var-set dex-contract (some new-dex-contract))
+        
+        (print {
+            type: "contract-addresses-updated",
+            multi-sig: new-multi-sig,
+            dao-token: new-dao-token,
+            dex-contract: new-dex-contract,
+            multi-sig-creator: tx-sender
+        })
+        (ok true)))
+
+;; DAO token reserved functions
+;; Initialize token distribution
+;; This is called by the token on deployment o
+;; It is necessarily after Period 1 ends and after dao-token/dex-contract is set
+;; Also this sends the stx-balance 100 STX to the dex-contract and 50 STX to the multi-sig to cover for fees
+(define-public (initialize-token-distribution)
+    (begin
+        (asserts! (is-some (var-get period-2-height)) ERR-PERIOD-2-NOT-INITIALIZED)
+        (asserts! (is-eq tx-sender (var-get dao-token)) ERR-NOT-AUTHORIZED)
+        (asserts! (is-none (var-get token-contract)) ERR-ALREADY-INITIALIZED)
+        (asserts! (is-some (var-get multi-sig)) ERR-NOT-SET)
+        (asserts! (is-some (var-get dao-token)) ERR-NOT-SET)
+        (asserts! (is-some (var-get dex-contract)) ERR-NOT-SET)
+        (try! (as-contract (stx-transfer? u100000000 tx-sender (unwrap-panic (var-get dex-contract)))))  ;; 100 STX to DEX
+        (try! (as-contract (stx-transfer? u10000000 tx-sender (unwrap-panic  (var-get dao-multi-sig)))))   ;; 10 STX to multi-sig/admin -> covers contract deployment fees
+        (try! (as-contract (stx-transfer? u40000000 tx-sender (unwrap-panic (var-get multi-sig-creator))))) ;; 40 STX fee to multi-sig creator -> covers Runes fees
+        (var-set token-contract (some tx-sender))
+        (var-set distribution-height (some burn-block-height))
+        (var-set ft-balance FT-INITIALIZED-BALANCE) ;; 20M tokens
+        (print {
+            type: "distribution-initialized",
+            token-contract: (var-get dao-token),
+            distribution-height: burn-block-height,
+            ft-balance: FT-INITIALIZED-BALANCE
+        })
+        (ok true)))
+
+;; on Bonding
+;; In Dex contract:
+;; In the graduation branch of the buy function 
+;; add a line to the call toggle-accelerated-vesting
+;; (contract-call? .hybrid-pre-launch toggle-accelerated-vesting)
+(define-public (toggle-accelerated-vesting)
+    (begin
+        (asserts! (is-eq tx-sender (unwrap-panic (var-get dex-contract))) ERR-NOT-AUTHORIZED)
+        (ok (var-set accelerated-vesting true))))
 
 ;; boot contract
 (var-set deployment-height (some burn-block-height))
