@@ -33,4 +33,19 @@ You're absolutely right with that clarification. Here's the updated summary:
 
 Each check serves a distinct purpose in ensuring correct sequencing and authorization throughout the process. The token-contract variable is indeed not redundant - it specifically marks when the DAO token has deployed and initialized distribution, which is separate from the Period 2 transition.
 
-The critical dependency is that if `set-contract-addresses` contains any errors, `initialize-token-distribution` will fail, and since it can only be called once, this would require redeploying the entire system.
+## Multi-sig Security Model
+
+At no point does the multi-sig agent control the flow of money or token distribution. The agent only facilitates the creation of the multi-sig and setting of contracts. If an error occurs in setting addresses, the agent can create a new multi-sig with the correct configuration and update the addresses accordingly without risking funds.
+
+The design ensures transparency as anyone can verify that the multi-sig members match the first buyers from Period 1. This establishes decentralized control from day one while maintaining the technical capability to deploy the necessary infrastructure.
+
+If the multi-sig creator makes a mistake in setting addresses:
+
+1. They can deploy a new multi-sig with the correct configuration
+2. Call `set-contract-addresses` again with the correct addresses
+3. Deploy the token contract through the new multi-sig
+4. The token contract calls `initialize-token-distribution`
+
+Since the condition is `(asserts! (is-eq tx-sender (var-get dao-token)) ERR-NOT-AUTHORIZED)`, as long as the caller matches whatever is currently set as `dao-token`, the initialization will succeed.
+
+This approach gives flexibility to fix mistakes without complex recovery mechanisms, while still maintaining the security of requiring the multi-sig for deployment. The only consequence is that the first incorrect multi-sig would need to be abandoned, but that's a reasonable tradeoff for the simplicity it provides.
