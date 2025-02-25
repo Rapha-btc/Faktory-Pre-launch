@@ -1,48 +1,36 @@
-I'll clarify how the periods and initialization work in this contract:
+You're absolutely right with that clarification. Here's the updated summary:
 
-### Period Transitions
+## Transitions and Function Availability
 
-1. **Period 1:**
+**Period 1:**
 
-   - Starts when contract is deployed
-   - Ends either when:
-     - All 20 seats are sold AND at least 10 users have bought (starts Period 2)
-     - OR when EXPIRATION-PERIOD (2100 blocks) passes
+- `buy-up-to`: Available until Period 2 starts
+- `refund`: Only available if Period 1 expires without reaching criteria and Period 2 hasn't started
 
-2. **Period 2:**
-   - Starts automatically when criteria met (20 seats, 10+ users)
-   - Lasts exactly PERIOD-2-LENGTH (100 blocks)
-   - Purpose: Allow for seat redistribution from largest holders to new users
+**Period 2:**
 
-### Function Availability
+- Begins automatically when 20 seats are sold to 10+ users
+- `buy-single-seat`: Only available during Period 2 (100 blocks)
+- `set-contract-addresses`: Only available after Period 2 starts
 
-- **buy-up-to:** Only available during Period 1. It's disabled as soon as Period 2 starts.
-- **buy-single-seat:** Only available during Period 2. It's disabled after Period 2 expires.
-- **refund:** Only available if Period 1 expires without meeting minimum requirements AND token distribution hasn't been initialized.
+**Token Distribution:**
 
-### Token Distribution Initialization
+- `initialize-token-distribution`: Can only be called by the DAO token after Period 2 starts and set-contract-addresses is set properly
+- `claim`: Only available after token distribution is initialized
 
-- **initialize-token-distribution:**
-  - Can only be called after Period 1 ends (meaning Period 2 has started)
-  - Must be called by the DAO token contract (not redundant - it's a security check)
-  - Sends fees to DEX, multi-sig, and creator
-  - Sets distribution height for vesting calculations
+## Key Variables
 
-### Key Points
+- `period-2-height`: Marks successful completion of Period 1
+- `token-contract`: Marks DAO token deployment and initialization (not redundant)
 
-1. Period 2 can indeed start before the expiration of Period 1 if all 20 seats are sold to at least 10 users.
-2. The token distribution initialization can happen during Period 2, but it requires the DAO token to be deployed first.
-3. Refunds are only available if Period 1 expires without meeting the requirements AND before token distribution is initialized.
+## Workflow
 
-The initialization of token-contract is not redundant with Period 2. Period 2 marks the transition to redistribution, while token-contract initialization marks when the token contract is deployed and ready for distribution.
+1. Users buy seats in Period 1
+2. Period 2 starts automatically when requirements met
+3. Multi-sig agent sets contract addresses during Period 2
+4. DAO token deploys and initializes distribution (which can only happen once)
+5. Users can begin claiming tokens according to vesting schedule
 
-You're correct that the agent could create the multi-sig, set the token/dex addresses, and launch them all during Period 2. This is the expected workflow:
+Each check serves a distinct purpose in ensuring correct sequencing and authorization throughout the process. The token-contract variable is indeed not redundant - it specifically marks when the DAO token has deployed and initialized distribution, which is separate from the Period 2 transition.
 
-1. Period 2 starts (after selling 20 seats to 10+ users)
-2. Agent creates multi-sig with addresses from Period 1
-3. Agent sets DAO token and DEX contract addresses
-4. Multi-sig deploys DAO token
-5. DAO token initializes distribution
-6. Users begin claiming tokens according to vesting schedule
-
-Nothing in the contract looks redundant - each check serves a specific purpose to ensure correct sequencing and authorization.
+The critical dependency is that if `set-contract-addresses` contains any errors, `initialize-token-distribution` will fail, and since it can only be called once, this would require redeploying the entire system.
