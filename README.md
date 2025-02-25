@@ -39,6 +39,8 @@ At no point does the multi-sig agent control the flow of money or token distribu
 
 The design ensures transparency as anyone can verify that the multi-sig members match the first buyers from Period 1. This establishes decentralized control from day one while maintaining the technical capability to deploy the necessary infrastructure.
 
+Recovery Path: If the token is deployed with an address that doesn't match what's set in the pre-launch contract, initialize-distribution will fail. The agent can then create a new multi-sig, update the contract addresses, and redeploy the token correctly. This ensures STX funds in the pre-launch contract are never stuck, even if deployment errors occur.
+
 If the multi-sig creator makes a mistake in setting addresses:
 
 1. They can deploy a new multi-sig with the correct configuration
