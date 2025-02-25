@@ -193,4 +193,3 @@
 
 ;; add in the graduation branch of the buy function the call to the pre-launch contract to toggle accelerated graduation to true
 
-(ok true)
