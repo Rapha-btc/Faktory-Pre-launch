@@ -102,7 +102,7 @@
 ;;     ;; ft distribution
 ;;     (try! (ft-mint? NOTHING (/ (* MAX u80) u100) 'SP2XCME6ED8RERGR9R7YDZW7CA6G3F113Y8JMVA46.nothing-treasury)) ;; 80% treasury
 ;;     (try! (ft-mint? NOTHING (/ (* MAX u18) u100) 'SP2XCME6ED8RERGR9R7YDZW7CA6G3F113Y8JMVA46.nothing-faktory-dex)) ;; 18% dex
-(try! (ft-mint? NOTHING (/ (* MAX u2) u100) 'SP2XCME6ED8RERGR9R7YDZW7CA6G3F113Y8JMVA46.nothing-faktory-dex)) ;; 2% pre-launch (20 million of 1 billion)
+;; (try! (ft-mint? NOTHING (/ (* MAX u2) u100) 'SP2XCME6ED8RERGR9R7YDZW7CA6G3F113Y8JMVA46.nothing-faktory-dex)) ;; 2% pre-launch (20 million of 1 billion)
 ;;     ;; deploy fixed fee
 ;;     (try! (stx-transfer-to 'SMH8FRN30ERW1SX26NJTJCKTDR3H27NRJ6W75WQE u500000)) 
 
@@ -123,6 +123,6 @@
 ;; )
 
 ;; intialize pre-launch vesting contract
-(contract-call? .simple-pre-launch initialize-token-distribution)
+;; (contract-call? .simple-pre-launch initialize-token-distribution)
 
 (ok true)

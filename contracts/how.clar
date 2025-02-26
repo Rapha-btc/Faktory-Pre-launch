@@ -1,18 +1,20 @@
+;; 954e495695af05d9a3afb8b8fb3e6d2719b1d1b23b8219804e2b37269b88a895
+;; aibtc.com DAO faktory.fun PRE @version 1.0
 ;; Pre-launch contract for token distribution
 ;; Dynamic allocation: 1-7 seats per user in Period 1
 ;; Each seat = 7.5 STX, targeting 20 seats total with minimum 10 users
 
-(use-trait faktory-token 'STTWD9SPRQVD3P733V89SV0P8RZRZNQADG034F0A.faktory-trait-v1.sip-010-trait) 
+(use-trait faktory-token .faktory-trait-v1.sip-010-trait) ;; 'STTWD9SPRQVD3P733V89SV0P8RZRZNQADG034F0A
 
 (define-constant SEATS u20)
 (define-constant MIN-USERS u10)
 (define-constant MAX-SEATS-PER-USER u7)
 (define-constant PRICE-PER-SEAT u7500000) ;; 7.5 STX in microSTX
-(define-constant TOKENS-PER-SEAT u2000000000000) ;; 2M tokens per seat
+(define-constant TOKENS-PER-SEAT u2000000000000) ;; 2M tokens per seat if supply 1B
 (define-constant EXPIRATION-PERIOD u2100) ;; 1 Stacks reward cycle in PoX-4
 (define-constant PERIOD-2-LENGTH u100) ;; blocks for redistribution period
 
-(define-constant FT-INITIALIZED-BALANCE u40000000000000) ;; 40M tokens for pre-launch
+(define-constant FT-INITIALIZED-BALANCE u40000000000000) ;; 40M tokens for pre-launch if supply 1B
 (define-constant ACCELERATED-PERCENT u60) 
 
 ;; Vesting schedule (percentages add up to 100)
@@ -40,7 +42,7 @@
 (define-data-var dex-contract (optional principal) none) ;; 'STRZ4P1ABSVSZPC4HZ4GDAW834HHEHJMF65X5S6D.txt6-faktory-dex)
 (define-data-var dao-multi-sig (optional principal) none) ;; 'ST3SPSJDYGHF0ARGV1TNS0HX6JEP7T1J6849A7BB4)
 ;; Helper vars
-(define-data-var target-owner principal 'ST3SPSJDYGHF0ARGV1TNS0HX6JEP7T1J6849A7BB4) ;; cant-be-evil.stx  in testnet? random 'SP000000000000000000002Q6VF78
+(define-data-var target-owner principal 'STTWD9SPRQVD3P733V89SV0P8RZRZNQADG034F0A) ;; cant-be-evil.stx  in testnet? random 'SP000000000000000000002Q6VF78
 
 ;; Define a data variable to track seat holders
 (define-data-var seat-holders (list 20 {owner: principal, seats: uint}) (list))
@@ -159,16 +161,15 @@
         (match (stx-transfer? (* PRICE-PER-SEAT actual-seats) tx-sender (as-contract tx-sender))
             success 
                 (begin
-                    ;; Update records
-                    (if (is-eq user-seats u0)
+                    (if (is-eq user-seats u0) 
                         (var-set total-users (+ (var-get total-users) u1))
                         true)
                     (map-set seats-owned tx-sender (+ user-seats actual-seats))
                     (var-set total-seats-taken (+ current-seats actual-seats))
                     (var-set stx-balance (+ (var-get stx-balance) (* PRICE-PER-SEAT actual-seats)))
                     (update-seat-holder tx-sender (+ user-seats actual-seats))
-                    ;; Check if we should start Period 2
-                    (if (and (>= (var-get total-users) MIN-USERS) 
+                    
+                    (if (and (>= (var-get total-users) MIN-USERS)  ;; Check if we should start Period 2
                             (>= (var-get total-seats-taken) SEATS))
                         (var-set period-2-height (some burn-block-height))
                         true)
@@ -235,7 +236,7 @@
                     (ok true))
             error (err error))))
 
-;; Refund logic only for Period 1 failures
+;; Refund logic only for Period 1 expired and Period 2 not started
 (define-public (refund)
     (let (
         (user-seats (default-to u0 (map-get? seats-owned tx-sender)))
@@ -362,47 +363,37 @@
 (define-read-only (get-seat-holders)
     (ok {seat-holders: (var-get seat-holders)}))
 
-;; multi-sig creator reserved functions
-;; At the end of period 1, our multi-sig agent creates a multi-sig that will be used to deploy all ai dao contracts
-;; Our multi-sig agent will create all contract deployment tsx and pre-sign them
-;; Anyone who is a first buyer in period 1 will be able to sign all the contract deployments
+;; A multi-sig creator contract addresses after creating a multi-sig whose owners are 10 buyers resulting from period 1
 (define-public (set-contract-addresses (new-multi-sig principal) (new-dao-token principal) (new-dex-contract principal))
     (begin
-        ;; Check Period 1 has ended (either expired or Period 2 started)
-        (asserts! (is-some (var-get period-2-height)) ERR-PERIOD-2-NOT-INITIALIZED)        ;; Only allow a multi-sig creator acting as an agent to set contract addresses using multi-sig of 10 buyers resulting from period 1
+        (asserts! (is-some (var-get period-2-height)) ERR-PERIOD-2-NOT-INITIALIZED)
         (asserts! (is-eq tx-sender (var-get multi-sig-creator)) ERR-NOT-AUTHORIZED)
-        ;; assert out if period 1 is not finished (either expired or 150 STX collected)
 
-        ;; Update the addresses
-        (var-set multi-sig (some new-multi-sig))
+        (var-set dao-multi-sig (some new-multi-sig))
         (var-set dao-token (some new-dao-token))
         (var-set dex-contract (some new-dex-contract))
         
         (print {
             type: "contract-addresses-updated",
-            multi-sig: new-multi-sig,
+            dao-multi-sig: new-multi-sig,
             dao-token: new-dao-token,
             dex-contract: new-dex-contract,
             multi-sig-creator: tx-sender
         })
         (ok true)))
 
-;; DAO token reserved functions
-;; Initialize token distribution
-;; This is called by the token on deployment 
-;; It is necessarily after Period 1 ends and after dao-token/dex-contract is set
-;; Also this sends the stx-balance 100 STX to the dex-contract and 50 STX to the multi-sig to cover for fees
+;; on DAO token deployment
 (define-public (initialize-token-distribution)
     (begin
         (asserts! (is-some (var-get period-2-height)) ERR-PERIOD-2-NOT-INITIALIZED)
-        (asserts! (is-eq tx-sender (var-get dao-token)) ERR-NOT-AUTHORIZED)
+        (asserts! (is-eq (some tx-sender) (var-get dao-token)) ERR-NOT-AUTHORIZED)
         (asserts! (is-none (var-get token-contract)) ERR-ALREADY-INITIALIZED)
-        (asserts! (is-some (var-get multi-sig)) ERR-NOT-SET)
+        (asserts! (is-some (var-get dao-multi-sig)) ERR-NOT-SET)
         (asserts! (is-some (var-get dao-token)) ERR-NOT-SET)
         (asserts! (is-some (var-get dex-contract)) ERR-NOT-SET)
         (try! (as-contract (stx-transfer? u100000000 tx-sender (unwrap-panic (var-get dex-contract)))))  ;; 100 STX to DEX
         (try! (as-contract (stx-transfer? u10000000 tx-sender (unwrap-panic  (var-get dao-multi-sig)))))   ;; 10 STX to multi-sig/admin -> covers contract deployment fees
-        (try! (as-contract (stx-transfer? u40000000 tx-sender (unwrap-panic (var-get multi-sig-creator))))) ;; 40 STX fee to multi-sig creator -> covers Runes fees
+        (try! (as-contract (stx-transfer? u40000000 tx-sender (var-get multi-sig-creator)))) ;; 40 STX fee to multi-sig creator -> covers Runes fees
         (var-set token-contract (some tx-sender))
         (var-set distribution-height (some burn-block-height))
         (var-set ft-balance FT-INITIALIZED-BALANCE) ;; 20M tokens
@@ -415,10 +406,6 @@
         (ok true)))
 
 ;; on Bonding
-;; In Dex contract:
-;; In the graduation branch of the buy function 
-;; add a line to the call toggle-accelerated-vesting
-;; (contract-call? .hybrid-pre-launch toggle-accelerated-vesting)
 (define-public (toggle-accelerated-vesting)
     (begin
         (asserts! (is-eq tx-sender (unwrap-panic (var-get dex-contract))) ERR-NOT-AUTHORIZED)
