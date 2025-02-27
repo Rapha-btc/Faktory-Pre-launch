@@ -1,15 +1,15 @@
-;; 83da345943a4add018b97fef8f756f6c9fc4ac6dc5401c1cb3b8053b7e68883a
+;; 5c1c1d54f84741572deb0312d0ed77bc6bd08ef5e843bfeb227bc5f290b283e3
 ;; aibtc.com DAO faktory.fun PRE @version 1.0
 ;; Pre-launch contract for token distribution
 ;; Dynamic allocation: 1-7 seats per user in Period 1
-;; Each seat = 7.5 STX, targeting 20 seats total with minimum 10 users
+;; Each seat = 0.00020000 BTC, targeting 20 seats total with minimum 10 users
 
-(use-trait faktory-token .faktory-trait-v1.sip-010-trait) ;; STTWD9SPRQVD3P733V89SV0P8RZRZNQADG034F0A
+(use-trait faktory-token .faktory-trait-v1.sip-010-trait)  ;; STTWD9SPRQVD3P733V89SV0P8RZRZNQADG034F0A
 
 (define-constant SEATS u20)
 (define-constant MIN-USERS u10)
 (define-constant MAX-SEATS-PER-USER u7)
-(define-constant PRICE-PER-SEAT u7500000) ;; 7.5 STX in microSTX
+ (define-constant PRICE-PER-SEAT u20000) ;; 20K sats per seat
 (define-constant TOKENS-PER-SEAT u2000000000000) ;; 2M tokens per seat if supply 1B
 (define-constant EXPIRATION-PERIOD u2100) ;; 1 Stacks reward cycle in PoX-4
 (define-constant PERIOD-2-LENGTH u100) ;; blocks for redistribution period
