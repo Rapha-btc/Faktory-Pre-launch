@@ -1,10 +1,10 @@
-;; 954e495695af05d9a3afb8b8fb3e6d2719b1d1b23b8219804e2b37269b88a895
+;; 83da345943a4add018b97fef8f756f6c9fc4ac6dc5401c1cb3b8053b7e68883a
 ;; aibtc.com DAO faktory.fun PRE @version 1.0
 ;; Pre-launch contract for token distribution
 ;; Dynamic allocation: 1-7 seats per user in Period 1
 ;; Each seat = 7.5 STX, targeting 20 seats total with minimum 10 users
 
-(use-trait faktory-token .faktory-trait-v1.sip-010-trait) ;; 'STTWD9SPRQVD3P733V89SV0P8RZRZNQADG034F0A
+(use-trait faktory-token .faktory-trait-v1.sip-010-trait) ;; STTWD9SPRQVD3P733V89SV0P8RZRZNQADG034F0A
 
 (define-constant SEATS u20)
 (define-constant MIN-USERS u10)
@@ -371,7 +371,7 @@
 (define-public (set-contract-addresses (new-multi-sig principal) (new-dao-token principal) (new-dex-contract principal))
     (begin
         (asserts! (is-some (var-get period-2-height)) ERR-PERIOD-2-NOT-INITIALIZED)
-        (asserts! (is-eq contract-caller MULTI-SIG-CREATOR) ERR-NOT-AUTHORIZED)
+        (asserts! (is-eq tx-sender MULTI-SIG-CREATOR) ERR-NOT-AUTHORIZED)
 
         (var-set dao-multi-sig (some new-multi-sig))
         (var-set dao-token (some new-dao-token))
@@ -382,7 +382,7 @@
             dao-multi-sig: new-multi-sig,
             dao-token: new-dao-token,
             dex-contract: new-dex-contract,
-            multi-sig-creator: contract-caller
+            multi-sig-creator: MULTI-SIG-CREATOR
         })
         (ok true)))
 
