@@ -57,8 +57,7 @@ This approach gives flexibility to fix mistakes without complex recovery mechani
 ;;
 ;; 1. They provide valuable service in protocol deployment and bootstrapping
 ;; 2. Fee distribution is transparent, immutable and programmatically defined
-;; 3. The arrangement is disclosed to all participants upfront
-;; 4. Multi-sig creation formalizes their relationship with the DAO
+;; 3. Multi-sig creation formalizes their relationship with the DAO
 ;;
 ;; Fee compensation is separate from token purchase:
 ;; - Participants buy tokens through seat purchase
@@ -66,10 +65,6 @@ This approach gives flexibility to fix mistakes without complex recovery mechani
 ;; - These are distinct forms of value with different legal bases
 ;;
 ;; Implementation follows standard DeFi practices:
-;; - DEX contract routes portion of fees to pre-launch contract
-;; - Fees tracked separately from token vesting
-;; - Distribution proportional to seat ownership
-;; - Separate claiming mechanism for vested tokens and accumulated fees
 ;;
 ;; This creates proper incentive alignment and encourages long-term protocol engagement
 ;; beyond the initial vesting period.
