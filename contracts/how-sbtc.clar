@@ -457,10 +457,9 @@
 
 ;; Data structures
 (define-data-var current-period uint u0) ;; Current fee period
-(define-data-var fee-period-start uint u0) ;; this can be distribution-height + PERIOD-LENGTH for the first claiming period
 
 ;; Map to track total fees accumulated per period
-(define-map period-fees uint uint)
+(define-map period-fees uint (tuple (total uint) (remaining uint)))
 
 ;; Map to track if user has claimed fees for a specific period
 ;; Format: {user-principal}-{period} -> claimed-amount
@@ -469,19 +468,11 @@
 ;; Add this function to allow the DEX to send fees to the pre-launch contract
 (define-public (create-fees-receipt (amount uint))
     (let (
-        (current-block burn-block-height)
-        (period-start (var-get fee-period-start))
-        (period (if (> period-start u0)
-                   (/ (- current-block period-start) PERIOD-LENGTH)
-                   u0)))
+        (distribution-block (unwrap! (var-get distribution-height) ERR-NOT-SET))
+        (period (/ (- burn-block-height distribution-block) PERIOD-LENGTH)))
         
         ;; Only the DEX contract can call this function
         (asserts! (is-eq contract-caller (unwrap! (var-get dex-contract) ERR-NOT-SET)) ERR-NOT-AUTHORIZED)
-        
-        ;; Initialize fee tracking if this is the first time
-        (if (is-eq (var-get fee-period-start) u0)
-            (var-set fee-period-start current-block)
-            true)
         
         ;; Update current period if needed
         (var-set current-period period)
@@ -501,22 +492,24 @@
 ;; Function to claim fees for a specific period
 (define-public (claim-period-fees (period uint))
     (let (
-        (current-period (var-get current-period))
+        (current-period (/ (- burn-block-height distribution-block) PERIOD-LENGTH))
         (user-seats (default-to u0 (map-get? seats-owned tx-sender)))
         (period-key {user: tx-sender, period: period})
         (already-claimed (default-to u0 (map-get? claimed-period-fees period-key)))
         (claimable-amount (get-period-claimable-fees tx-sender period))
+        (bootstrapper tx-sender)
         )
-        
-        ;; Validate the period
-        (asserts! (<= period current-period) ERR-INVALID-PERIOD)
+        ;; Update current period if needed
+        (var-set current-period current-period)
+        ;; Validate the period - must be a past period, not the current one
+        (asserts! (< period current-period) ERR-INVALID-PERIOD)
         ;; Must own seats
         (asserts! (> user-seats u0) ERR-NOT-SEAT-OWNER)
         ;; Must have fees to claim
         (asserts! (> claimable-amount u0) ERR-NO-FEES-TO-CLAIM)
         
         ;; Process the claim
-        (match (as-contract (stx-transfer? claimable-amount tx-sender tx-sender))
+        (match (as-contract (stx-transfer? claimable-amount tx-sender bootstrapper))
             success
                 (begin
                     ;; Mark this period as claimed for this user
@@ -534,11 +527,12 @@
 ;; Function to claim fees for all unclaimed periods
 (define-public (claim-all-fees)
     (let (
-        (current-period (var-get current-period))
+        (current-period (/ (- burn-block-height distribution-block) PERIOD-LENGTH))
         (user-seats (default-to u0 (map-get? seats-owned tx-sender)))
         (total-claimable (get-all-claimable-fees tx-sender))
         )
-        
+        ;; Update current period if needed
+        (var-set current-period current-period)
         ;; Must own seats
         (asserts! (> user-seats u0) ERR-NOT-SEAT-OWNER)
         ;; Must have fees to claim
@@ -593,8 +587,7 @@
 ;; Calculate claimable fees for a specific period
 (define-read-only (get-period-claimable-fees (user principal) (period uint))
     (let (
-        (period-key {user: user, period: period})
-        (already-claimed (default-to u0 (map-get? claimed-period-fees period-key)))
+        (already-claimed (default-to u0 (map-get? claimed-period-fees {user: user, period: period})))
         (period-fees (default-to u0 (map-get? period-fees period)))
         (user-seats (default-to u0 (map-get? seats-owned user)))
         (total-seats (var-get total-seats-taken))
@@ -602,6 +595,7 @@
                       (/ (* period-fees user-seats) total-seats)
                       u0))
         )
+        ;; assert out if user-shares is stricly greater than remaining period-fees
         (if (> already-claimed u0)
             u0  ;; Already claimed
             user-share)))
@@ -640,7 +634,7 @@
 (define-read-only (get-user-fee-info (user principal))
     (ok {
         current-period: (var-get current-period),
-        fee-period-start: (var-get fee-period-start),
+        distribution-height: (var-get distribution-height),
         total-claimable: (get-all-claimable-fees user),
         user-seats: (default-to u0 (map-get? seats-owned user)),
         total-seats: (var-get total-seats-taken)
