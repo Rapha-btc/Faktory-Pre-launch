@@ -51,3 +51,25 @@ If the multi-sig creator makes a mistake in setting addresses:
 Since the condition is `(asserts! (is-eq tx-sender (var-get dao-token)) ERR-NOT-AUTHORIZED)`, as long as the caller matches whatever is currently set as `dao-token`, the initialization will succeed.
 
 This approach gives flexibility to fix mistakes without complex recovery mechanisms, while still maintaining the security of requiring the multi-sig for deployment. The only consequence is that the first incorrect multi-sig would need to be abandoned, but that's a reasonable tradeoff for the simplicity it provides.
+
+;; Pre-launch participants are considered co-deployers of the DAO contract infrastructure through
+;; the multi-sig and thus have legitimate claim to protocol fees based on:
+;;
+;; 1. They provide valuable service in protocol deployment and bootstrapping
+;; 2. Fee distribution is transparent, immutable and programmatically defined
+;; 3. The arrangement is disclosed to all participants upfront
+;; 4. Multi-sig creation formalizes their relationship with the DAO
+;;
+;; Fee compensation is separate from token purchase:
+;; - Participants buy tokens through seat purchase
+;; - Participants receive fees as compensation for their deployer role
+;; - These are distinct forms of value with different legal bases
+;;
+;; Implementation follows standard DeFi practices:
+;; - DEX contract routes portion of fees to pre-launch contract
+;; - Fees tracked separately from token vesting
+;; - Distribution proportional to seat ownership
+;; - Separate claiming mechanism for vested tokens and accumulated fees
+;;
+;; This creates proper incentive alignment and encourages long-term protocol engagement
+;; beyond the initial vesting period.
